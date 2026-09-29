@@ -1,5 +1,5 @@
 import SwiftUI
-import shared   // KMP framework
+import SharedLogic
 
 struct LoginView: View {
     @State private var viewModel = LoginObservable()

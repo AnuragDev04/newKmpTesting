@@ -1,5 +1,5 @@
 import SwiftUI
-import shared
+import SharedLogic
 
 @MainActor
 final class LoginObservable: ObservableObject {
