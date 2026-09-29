@@ -33,9 +33,6 @@ jobs:
         with:
           xcode-version: '16.2'
 
-      - name: Pre-build Kotlin iOS Framework
-        run: ./gradlew :sharedLogic:assembleSharedLogicReleaseFrameworkIosArm64 --stacktrace
-
       - name: Build and Archive iOS App (Unsigned)
         run: |
           xcodebuild archive \
@@ -43,18 +40,20 @@ jobs:
             -scheme iosApp \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath build/iosApp.xcarchive \
+            -archivePath "$PWD/build/iosApp.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
       - name: Package Unsigned IPA
         run: |
+          rm -rf build/ipa
           mkdir -p build/ipa/Payload
           cp -R build/iosApp.xcarchive/Products/Applications/*.app build/ipa/Payload/
           cd build/ipa
-          zip -r ../KmpTest-unsigned.ipa Payload
+          zip -qry ../KmpTest-unsigned.ipa Payload
           cd ../..
+          ls -lh build/KmpTest-unsigned.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
