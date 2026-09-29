@@ -1,4 +1,4 @@
-name: Build iOS IPA
+name: Build iOS IPA (Unsigned)
 
 on:
   push:
@@ -7,10 +7,15 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-ios:
     name: Build & Package iOS IPA
     runs-on: macos-14
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
@@ -25,6 +30,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Cache Kotlin/Native
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
@@ -33,11 +45,14 @@ jobs:
         with:
           xcode-version: '16.2'
 
+      # Optional: remove this step if your Xcode project already has the
+      # KMP "Run Script" phase (embedAndSignAppleFrameworkForXcode).
       - name: Pre-build Kotlin iOS Framework
         run: ./gradlew :sharedLogic:assembleSharedLogicReleaseFrameworkIosArm64 --stacktrace
 
       - name: Build and Archive iOS App (Unsigned)
         run: |
+          set -o pipefail
           xcodebuild archive \
             -project iosApp/iosApp.xcodeproj \
             -scheme iosApp \
@@ -46,15 +61,23 @@ jobs:
             -archivePath build/iosApp.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
+            CODE_SIGN_IDENTITY="" \
+            | tee build/xcodebuild.log
 
       - name: Package Unsigned IPA
         run: |
+          set -euo pipefail
+          APP_PATH=$(find build/iosApp.xcarchive/Products/Applications -maxdepth 1 -name "*.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No .app found in the xcarchive"
+            exit 1
+          fi
+          echo "Packaging: $APP_PATH"
+          rm -rf build/ipa
           mkdir -p build/ipa/Payload
-          cp -R build/iosApp.xcarchive/Products/Applications/*.app build/ipa/Payload/
-          cd build/ipa
-          zip -r ../KmpTest-unsigned.ipa Payload
-          cd ../..
+          cp -R "$APP_PATH" build/ipa/Payload/
+          (cd build/ipa && zip -qr ../KmpTest-unsigned.ipa Payload)
+          ls -lh build/KmpTest-unsigned.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
@@ -62,3 +85,4 @@ jobs:
           name: KmpTest-iOS-IPA
           path: build/KmpTest-unsigned.ipa
           retention-days: 14
+          if-no-files-found: error
